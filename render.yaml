@@ -3,7 +3,7 @@ services:
   - type: web
     name: hospice-scheduler-api
     env: node
-    plan: basic
+    plan: hobby
     buildCommand: cd hospice-scheduler-api && npm install
     startCommand: cd hospice-scheduler-api && npm start
     envVars:
