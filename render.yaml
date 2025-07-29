@@ -13,8 +13,10 @@ services:
         value: 10000
 
   # Frontend
-  - type: static
+  - type: web
     name: hospice-scheduler-frontend
+    env: static
+    plan: hobby
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
