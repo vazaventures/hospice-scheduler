@@ -3,7 +3,7 @@ services:
   - type: web
     name: hospice-scheduler-api
     env: node
-    plan: starter
+    plan: basic
     buildCommand: cd hospice-scheduler-api && npm install
     startCommand: cd hospice-scheduler-api && npm start
     envVars:
@@ -13,10 +13,8 @@ services:
         value: 10000
 
   # Frontend
-  - type: web
+  - type: static
     name: hospice-scheduler-frontend
-    env: static
-    plan: starter
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
