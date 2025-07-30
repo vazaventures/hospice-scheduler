@@ -369,6 +369,23 @@ function VisitCheck({ token, dataVersion, onDataChange }) {
         >
           {loading ? 'Loading...' : '📊 Load Sample Data'}
         </button>
+        <button
+          onClick={async () => {
+            setLoading(true);
+            try {
+              await dataManager.resetAndCreateFreshSampleData();
+              setError("");
+            } catch (err) {
+              setError("Failed to reset sample data: " + err.message);
+            } finally {
+              setLoading(false);
+            }
+          }}
+          className="reset-sample-button"
+          disabled={loading}
+        >
+          {loading ? 'Resetting...' : '🔄 Reset Sample Data'}
+        </button>
       </div>
 
       <div className="visitcheck-content">

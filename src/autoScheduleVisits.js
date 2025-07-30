@@ -1,5 +1,17 @@
 // Robust Auto-Scheduler for Hospice VisitCheck System v2.0
 // Combines enhanced scheduling logic with HOPE tool integration
+// Now uses modular structure for better maintainability
+
+import {
+  generateRnVisits,
+  generateNpVisits,
+  generateHopeVisits,
+  generateLvnVisits,
+  findAvailableDay,
+  getWeekDates,
+  createUnassignedVisit,
+  mergeWithExistingVisits
+} from './autoSchedule/index.js';
 
 export class RobustAutoScheduler {
   constructor(patients, staff, existingVisits = []) {
@@ -10,12 +22,13 @@ export class RobustAutoScheduler {
 
   // Main scheduling function for a week
   autoScheduleVisits(patients, existingVisits, weekDates) {
+    this.existingVisits = existingVisits;
     return this.generateVisitsForWeek(weekDates[0]);
   }
 
   // Generate visits for a specific week
   generateVisitsForWeek(weekStartDate) {
-    const weekDates = this.getWeekDates(weekStartDate);
+    const weekDates = getWeekDates(weekStartDate);
     const newVisits = [];
 
     this.patients.forEach(patient => {
@@ -25,263 +38,56 @@ export class RobustAutoScheduler {
       newVisits.push(...patientVisits);
     });
 
-    return this.mergeWithExistingVisits(newVisits, weekDates);
+    return mergeWithExistingVisits(newVisits, this.existingVisits, weekDates);
   }
 
-  // Generate visits for a specific patient
+  // Generate visits for a specific patient using modular approach
   generatePatientVisits(patient, weekDates) {
     const visits = [];
     const patientId = patient.id;
     const assignedRN = patient.assignedRN;
     const assignedLVN = patient.assignedLVN;
     const assignedNP = patient.assignedNP;
-    const frequency = patient.frequency;
-    const lastRNVisitDate = patient.lastRNVisitDate;
-    const benefitPeriodNumber = patient.benefitPeriodNumber;
-    const socDate = patient.socDate;
 
     // Check if patient is unassigned
     if (!assignedRN && !assignedLVN && !assignedNP) {
-      visits.push(this.createUnassignedVisit(patient, weekDates[0]));
+      visits.push(createUnassignedVisit(patient, weekDates[0]));
       return visits;
     }
 
-    // Parse frequency (e.g., "3x/week" -> 3)
-    const frequencyNum = parseInt(frequency.match(/\d+/)?.[0] || "1");
     let visitsScheduled = 0;
 
     // RN Visit Logic (every 14 days or recert due) - This is the primary visit
-    if (assignedRN && this.isRNVisitDue(patient, lastRNVisitDate, benefitPeriodNumber) && visitsScheduled < frequencyNum) {
-      const rnVisit = this.generateRNVisit(patient, weekDates, visitsScheduled);
-      if (rnVisit) {
-        // Add HOPE tags to RN visit if needed
-        const hopeTags = this.getHOPETags(patient);
-        if (hopeTags.length > 0) {
-          rnVisit.tags = [...(rnVisit.tags || []), ...hopeTags];
-          rnVisit.notes = `${rnVisit.notes} ${hopeTags.map(tag => `(${tag})`).join(' ')}`;
-        }
-        visits.push(rnVisit);
-        visitsScheduled++;
-      }
-    }
+    const rnVisits = generateRnVisits(patient, weekDates, visitsScheduled, 
+      (patientId, weekDates, visitsScheduled) => findAvailableDay(patientId, weekDates, visitsScheduled, this.existingVisits),
+      this.existingVisits
+    );
+    visits.push(...rnVisits);
+    visitsScheduled += rnVisits.length;
+
+    // HOPE Visit Logic (attach to RN visits or create standalone)
+    const hopeVisits = generateHopeVisits(patient, weekDates, visitsScheduled,
+      (patientId, weekDates, visitsScheduled) => findAvailableDay(patientId, weekDates, visitsScheduled, this.existingVisits),
+      this.existingVisits
+    );
+    visits.push(...hopeVisits);
+    visitsScheduled += hopeVisits.length;
 
     // LVN Visit Logic (fill remaining frequency slots)
-    if (assignedLVN && visitsScheduled < frequencyNum) {
-      const lvnVisits = this.generateLVNVisits(patient, weekDates, visitsScheduled, frequencyNum);
-      visits.push(...lvnVisits);
-      visitsScheduled += lvnVisits.length;
-    }
+    const lvnVisits = generateLvnVisits(patient, weekDates, visitsScheduled,
+      (patientId, weekDates, visitsScheduled) => findAvailableDay(patientId, weekDates, visitsScheduled, this.existingVisits),
+      this.existingVisits
+    );
+    visits.push(...lvnVisits);
+    visitsScheduled += lvnVisits.length;
 
-    // NP Visit Logic (BP2+ only, if not already at frequency limit)
-    if (assignedNP && this.isNPVisitRequired(benefitPeriodNumber) && visitsScheduled < frequencyNum) {
-      const npVisit = this.generateNPVisit(patient, weekDates, visitsScheduled);
-      if (npVisit) {
-        visits.push(npVisit);
-      }
-    }
+    // NP Visit Logic (BP3+ only, if not already at frequency limit)
+    const npVisits = generateNpVisits(patient, weekDates, visitsScheduled,
+      (patientId, weekDates, visitsScheduled) => findAvailableDay(patientId, weekDates, visitsScheduled, this.existingVisits)
+    );
+    visits.push(...npVisits);
 
     return visits;
-  }
-
-  // Get HOPE tags for a patient (to be added to RN visits)
-  getHOPETags(patient) {
-    const tags = [];
-    const patientId = patient.id;
-    const socDate = new Date(patient.socDate);
-    const today = new Date();
-    const daysOnService = Math.floor((today - socDate) / (1000 * 60 * 60 * 24));
-
-    // Check if HUV1 is due (days 6-15 from SOC)
-    if (daysOnService >= 6 && daysOnService <= 15) {
-      const hasHUV1 = this.existingVisits.some(v => 
-        v.patientId === patientId && 
-        v.tags && 
-        v.tags.includes("HOPE") && 
-        v.tags.includes("HUV1") &&
-        v.completed
-      );
-      
-      if (!hasHUV1) {
-        tags.push("HOPE", "HUV1");
-      }
-    }
-
-    // Check if HUV2 is due (days 16-30 from SOC)
-    if (daysOnService >= 16 && daysOnService <= 30) {
-      const hasHUV2 = this.existingVisits.some(v => 
-        v.patientId === patientId && 
-        v.tags && 
-        v.tags.includes("HOPE") && 
-        v.tags.includes("HUV2") &&
-        v.completed
-      );
-      
-      if (!hasHUV2) {
-        tags.push("HOPE", "HUV2");
-      }
-    }
-
-    return tags;
-  }
-
-  // Check if RN visit is due (14-day rule or recert)
-  isRNVisitDue(patient, lastRNVisitDate, benefitPeriodNumber) {
-    if (!lastRNVisitDate) return true; // First visit
-    
-    const daysSinceLastRN = Math.floor((new Date() - new Date(lastRNVisitDate)) / (1000 * 60 * 60 * 24));
-    
-    // RN visit due if 14+ days have passed
-    if (daysSinceLastRN >= 14) return true;
-    
-    // RN visit due if recertification is due
-    if (this.isRecertDue(patient, benefitPeriodNumber)) return true;
-    
-    return false;
-  }
-
-  // Check if recertification is due
-  isRecertDue(patient, benefitPeriodNumber) {
-    if (!patient.socDate) return false;
-    
-    const socDate = new Date(patient.socDate);
-    const today = new Date();
-    const daysOnService = Math.floor((today - socDate) / (1000 * 60 * 60 * 24));
-    
-    // Recert due at 60 days for BP1, 90 days for BP2, etc.
-    const recertDays = benefitPeriodNumber === 1 ? 60 : 90;
-    
-    return daysOnService >= recertDays && daysOnService <= recertDays + 7;
-  }
-
-  // Check if NP visit is required (BP2+ only)
-  isNPVisitRequired(benefitPeriodNumber) {
-    return benefitPeriodNumber >= 2;
-  }
-
-  // Generate RN visit
-  generateRNVisit(patient, weekDates, visitsScheduled) {
-    const availableDay = this.findAvailableDay(patient.id, weekDates, visitsScheduled);
-    if (!availableDay) return null;
-
-    return {
-      id: `auto-rn-${patient.id}-${Date.now()}`,
-      patientId: patient.id,
-      patientName: patient.name,
-      date: availableDay,
-      staff: patient.assignedRN,
-      discipline: "RN",
-      type: "routine",
-      completed: false,
-      notes: "Auto-assigned RN visit",
-      tags: [],
-      priority: "high"
-    };
-  }
-
-  // Generate LVN visits
-  generateLVNVisits(patient, weekDates, visitsScheduled, frequencyNum) {
-    const visits = [];
-    const remainingSlots = frequencyNum - visitsScheduled;
-    
-    if (remainingSlots <= 0) return visits;
-
-    // Spread out LVN visits evenly across the week
-    const interval = weekDates.length / (remainingSlots + 1);
-    for (let i = 0; i < remainingSlots; i++) {
-      const dayIndex = Math.round((i + 1) * interval);
-      if (dayIndex >= weekDates.length) break;
-      
-      const availableDay = this.findAvailableDay(patient.id, weekDates, visitsScheduled + visits.length);
-      if (availableDay) {
-        visits.push({
-          id: `auto-lvn-${patient.id}-${Date.now()}-${i}`,
-          patientId: patient.id,
-          patientName: patient.name,
-          date: availableDay,
-          staff: patient.assignedLVN,
-          discipline: "LVN",
-          type: "routine",
-          completed: false,
-          notes: "Auto-assigned LVN visit",
-          tags: [],
-          priority: "medium"
-        });
-      }
-    }
-
-    return visits;
-  }
-
-  // Generate NP visit
-  generateNPVisit(patient, weekDates, visitsScheduled) {
-    const availableDay = this.findAvailableDay(patient.id, weekDates, visitsScheduled);
-    if (!availableDay) return null;
-
-    return {
-      id: `auto-np-${patient.id}-${Date.now()}`,
-      patientId: patient.id,
-      patientName: patient.name,
-      date: availableDay,
-      staff: patient.assignedNP,
-      discipline: "NP",
-      type: "routine",
-      completed: false,
-      notes: "Auto-assigned NP visit",
-      tags: [],
-      priority: "medium"
-    };
-  }
-
-  // Create unassigned visit
-  createUnassignedVisit(patient, date) {
-    return {
-      id: `unassigned-${patient.id}-${Date.now()}`,
-      patientId: patient.id,
-      patientName: patient.name,
-      date: date,
-      staff: "Unassigned",
-      discipline: "Unassigned",
-      type: "unassigned",
-      completed: false,
-      notes: "Patient needs team assignment",
-      tags: ["unassigned"],
-      priority: "urgent"
-    };
-  }
-
-  // Find available day for a patient
-  findAvailableDay(patientId, weekDates, visitsScheduled) {
-    const existingVisitsForPatient = this.existingVisits.filter(v => 
-      v.patientId === patientId && weekDates.includes(v.date)
-    );
-
-    for (const date of weekDates) {
-      const hasVisitOnDate = existingVisitsForPatient.some(v => v.date === date);
-      if (!hasVisitOnDate) {
-        return date;
-      }
-    }
-
-    return null;
-  }
-
-  // Get week dates (Monday to Friday)
-  getWeekDates(startDate) {
-    const start = new Date(startDate);
-    return Array.from({ length: 5 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d.toISOString().split('T')[0];
-    });
-  }
-
-  // Merge new visits with existing visits
-  mergeWithExistingVisits(newVisits, weekDates) {
-    const existingVisitsInWeek = this.existingVisits.filter(v => 
-      weekDates.includes(v.date)
-    );
-    
-    return [...existingVisitsInWeek, ...newVisits];
   }
 
   // Utility functions for visit management
@@ -368,13 +174,14 @@ export const visitUtils = {
   getTagColor(tag) {
     switch (tag) {
       case 'routine': return '#254FBB';
-      case 'recert': return '#38AAE1';
-      case 'prn': return '#83CDC1';
+      case 'recert': return '#f44336';
+      case 'prn': return '#9c27b0';
       case 'HOPE': return '#e74c3c';
-      case 'HUV1': return '#e67e22';
-      case 'HUV2': return '#f39c12';
+      case 'HUV1': return '#ff9800';
+      case 'HUV2': return '#ff5722';
+      case 'over-limit': return '#ff0000';
       case 'unassigned': return '#9FDFE1';
-      default: return '#3C3235';
+      default: return '#666666';
     }
   },
 
@@ -413,17 +220,11 @@ export const visitUtils = {
 
   // Calculate recertification window
   calculateRecertWindow(patient) {
-    if (!patient.benefitPeriodNumber || !patient.benefitPeriodNumber.includes("BP")) {
+    if (!patient.benefitPeriodEnd) {
       return null;
     }
     
-    const bpNumber = parseInt(patient.benefitPeriodNumber.replace("BP", ""));
-    const benefitPeriodStart = new Date(patient.benefitPeriodStart);
-    const benefitPeriodEnd = new Date(benefitPeriodStart);
-    
-    // BP2+ uses 60-day periods
-    benefitPeriodEnd.setDate(benefitPeriodStart.getDate() + 60);
-    
+    const benefitPeriodEnd = new Date(patient.benefitPeriodEnd);
     const recertWindowStart = new Date(benefitPeriodEnd);
     recertWindowStart.setDate(benefitPeriodEnd.getDate() - 14); // 14 days before end
     
