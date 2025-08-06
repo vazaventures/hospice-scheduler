@@ -35,4 +35,6 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        value: https://hospice-scheduler-api.onrender.com/api 
+        value: https://hospice-scheduler-api.onrender.com/api
+      - key: VITE_IS_DEMO
+        value: "true" 
