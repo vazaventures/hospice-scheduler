@@ -33,18 +33,25 @@ connection.connect((err, conn) => {
 
 // Helper to ensure connection is alive
 function ensureConnection(callback) {
-  if (connection.isUp && connection.isUp()) {
+  // Check if connection exists and is valid
+  if (connection && connection.isUp && connection.isUp()) {
     callback();
   } else {
-    connection.connect((err, conn) => {
-      if (err) {
-        console.error('Unable to reconnect: ' + err.message);
-        callback(err);
-      } else {
-        console.log('Reconnected to Snowflake.');
-        callback();
-      }
-    });
+    // Only try to connect if not already connecting
+    if (!connection.isConnecting) {
+      connection.connect((err, conn) => {
+        if (err) {
+          console.error('Unable to reconnect: ' + err.message);
+          callback(err);
+        } else {
+          console.log('Reconnected to Snowflake.');
+          callback();
+        }
+      });
+    } else {
+      // Connection is in progress, wait a bit and try again
+      setTimeout(() => ensureConnection(callback), 1000);
+    }
   }
 }
 
