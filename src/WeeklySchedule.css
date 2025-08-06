@@ -3,6 +3,29 @@
     padding: 20px;
     max-width: 100%;
     overflow-x: auto;
+    position: relative;
+}
+
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading-message {
+    background: #2196f3;
+    color: white;
+    padding: 20px 30px;
+    border-radius: 8px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
 }
 
 .schedule-header {
@@ -40,6 +63,59 @@
 
 .week-navigation button:hover {
     background: #1976d2;
+}
+
+.week-selector {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.week-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 12px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 80px;
+    background: white;
+}
+
+.week-option:hover {
+    border-color: #2196f3;
+    background: #f5f5f5;
+}
+
+.week-option.selected {
+    border-color: #2196f3;
+    background: #e3f2fd;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+}
+
+.week-option.current {
+    border-color: #4caf50;
+}
+
+.week-option.current.selected {
+    border-color: #4caf50;
+    background: #e8f5e8;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+.week-label {
+    font-weight: bold;
+    font-size: 12px;
+    color: #333;
+    margin-bottom: 2px;
+}
+
+.week-dates {
+    font-size: 10px;
+    color: #666;
+    text-align: center;
 }
 
 .week-display {
@@ -91,26 +167,32 @@
 .schedule-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: 13px; /* Slightly smaller font for compact layout */
 }
 
-.patient-header {
+.patient-header,
+.frequency-header {
     background: #f5f5f5;
-    padding: 12px;
+    padding: 8px; /* Reduced padding */
     text-align: left;
     font-weight: bold;
     border-bottom: 1px solid #ddd;
-    min-width: 200px;
+    min-width: 150px; /* Reduced width */
+}
+
+.frequency-header {
+    min-width: 100px;
+    text-align: center;
 }
 
 .day-header {
     background: #f5f5f5;
-    padding: 8px;
+    padding: 6px; /* Reduced padding */
     text-align: center;
     font-weight: bold;
     border-bottom: 1px solid #ddd;
     border-right: 1px solid #ddd;
-    min-width: 120px;
+    min-width: 100px; /* Reduced width */
 }
 
 .patient-row {
@@ -133,16 +215,46 @@
     background-color: #e3f2fd;
 }
 
-.patient-cell {
-    padding: 12px;
+.patient-row.frequency-warning {
+    border-left: 3px solid #f44336;
+}
+
+.patient-cell,
+.frequency-cell {
+    padding: 6px; /* Reduced padding */
     border-right: 1px solid #eee;
     vertical-align: top;
+}
+
+.frequency-cell {
+    text-align: center;
+    min-width: 100px;
+}
+
+.frequency-display {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.frequency-text {
+    font-weight: bold;
+    color: #333;
+    font-size: 12px;
+}
+
+.frequency-status {
+    font-size: 11px;
+    color: #666;
+    background: #f0f0f0;
+    padding: 2px 4px;
+    border-radius: 3px;
 }
 
 .patient-info {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px; /* Reduced gap */
 }
 
 .patient-name {
@@ -150,35 +262,36 @@
     color: #333;
     display: flex;
     align-items: center;
+    font-size: 13px; /* Slightly smaller */
 }
 
 .patient-details {
     display: flex;
-    gap: 8px;
+    gap: 6px; /* Reduced gap */
     align-items: center;
     flex-wrap: wrap;
 }
 
 .city {
     background: #e3f2fd;
-    padding: 2px 6px;
+    padding: 1px 4px; /* Reduced padding */
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 10px; /* Smaller font */
     color: #1976d2;
 }
 
 .frequency {
     background: #f3e5f5;
-    padding: 2px 6px;
+    padding: 1px 4px; /* Reduced padding */
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 10px; /* Smaller font */
     color: #7b1fa2;
 }
 
 .benefit-countdown {
-    padding: 2px 6px;
+    padding: 1px 4px; /* Reduced padding */
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 10px; /* Smaller font */
     font-weight: bold;
     color: white;
 }
@@ -200,9 +313,9 @@
 }
 
 .compliance-alert {
-    padding: 4px 8px;
+    padding: 2px 6px; /* Reduced padding */
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 10px; /* Smaller font */
     font-weight: bold;
 }
 
@@ -225,18 +338,18 @@
 }
 
 .schedule-cell {
-    padding: 8px;
+    padding: 3px; /* Reduced padding for compact layout */
     border-right: 1px solid #eee;
     border-bottom: 1px solid #eee;
     vertical-align: top;
-    min-height: 80px;
+    min-height: 45px; /* Reduced height */
     position: relative;
 }
 
 .visit-cell {
-    border-radius: 4px;
-    padding: 4px;
-    font-size: 12px;
+    border-radius: 3px; /* Smaller radius */
+    padding: 3px; /* Reduced padding */
+    font-size: 11px; /* Smaller font */
     cursor: grab;
     transition: all 0.2s ease;
     position: relative;
@@ -261,6 +374,20 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
+.visit-cell:active {
+    cursor: grabbing;
+    transform: scale(0.98);
+}
+
+.schedule-cell.drag-over {
+    background-color: rgba(33, 150, 243, 0.1);
+    border: 2px dashed #2196f3;
+}
+
+.schedule-cell.drag-over .visit-cell {
+    opacity: 0.5;
+}
+
 .add-visit-btn {
     background: #4caf50;
     color: white;
@@ -283,11 +410,12 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.7); /* Darker backdrop */
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 9999; /* Very high z-index */
+    backdrop-filter: blur(2px); /* Blur background */
 }
 
 .modal-content {
@@ -298,7 +426,21 @@
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4); /* Stronger shadow */
+    z-index: 10000; /* Higher than overlay */
+    position: relative;
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .modal-content h3 {
@@ -582,26 +724,27 @@
     }
 
     .schedule-table {
-        font-size: 12px;
+        font-size: 11px;
     }
 
     .patient-header,
+    .frequency-header,
     .day-header {
-        padding: 6px;
-        min-width: 80px;
+        padding: 4px;
+        min-width: 60px;
     }
 
     .patient-info {
-        font-size: 12px;
+        font-size: 11px;
     }
 
     .schedule-cell {
-        padding: 4px;
-        min-height: 60px;
+        padding: 2px;
+        min-height: 40px;
     }
 
     .visit-cell {
-        font-size: 10px;
+        font-size: 9px;
         padding: 2px;
     }
 
@@ -609,4 +752,51 @@
         width: 95%;
         padding: 16px;
     }
+}
+
+/* Overdue Row Styling */
+.patient-info.overdue-row {
+    background-color: #ffebee !important;
+    border-left: 4px solid #f44336;
+    position: relative;
+}
+
+.patient-info.overdue-row:before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(to bottom, #f44336, #e53935);
+    border-radius: 0 2px 2px 0;
+}
+
+.overdue-icon {
+    color: #f44336;
+    font-size: 14px;
+    margin-right: 6px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+/* Enhanced overdue styling for compliance alerts */
+.compliance-alert.critical {
+    background-color: #f44336 !important;
+    color: white !important;
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-top: 4px;
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
 } 

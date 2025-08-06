@@ -1,45 +1,71 @@
 import React, { useState, useEffect } from 'react';
 import dataManager from '../dataManager.js';
+import { visitUtils } from '../autoScheduleVisits.js';
 import './Forms.css';
 
-function VisitEditModal({ visit, isOpen, onClose, onSave }) {
+function VisitEditModal({ visit, isOpen, onClose, onSave, isNewVisit = false, patient = null, date = null }) {
   const [formData, setFormData] = useState({
+    date: '',
     staff: '',
     visitType: 'routine',
+    discipline: 'RN',
     tags: [],
     notes: ''
   });
   const [availableStaff, setAvailableStaff] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [data, setData] = useState(dataManager.getData());
 
   // Initialize form data when visit changes
   useEffect(() => {
-    if (visit) {
+    if (isNewVisit && patient && date) {
+      // New visit mode
       setFormData({
+        date: date,
+        staff: '',
+        visitType: 'routine',
+        discipline: 'RN',
+        tags: [],
+        notes: ''
+      });
+    } else if (visit) {
+      // Edit existing visit mode
+      setFormData({
+        date: visit.date,
         staff: visit.staff || '',
         visitType: visit.visitType || 'routine',
+        discipline: visit.discipline || 'RN',
         tags: visit.tags || [],
         notes: visit.notes || ''
       });
     }
-  }, [visit]);
+  }, [visit, isNewVisit, patient, date]);
 
-  // Load available staff
+  // Load available staff based on discipline
   useEffect(() => {
     if (isOpen) {
-      const data = dataManager.getData();
-      const staffByDiscipline = data.staff.filter(s => 
-        s.active && s.role === visit?.discipline
+      const currentData = dataManager.getData();
+      setData(currentData);
+      const staffByDiscipline = currentData.staff.filter(s => 
+        s.active && s.role === formData.discipline
       );
       setAvailableStaff(staffByDiscipline);
     }
-  }, [isOpen, visit]);
+  }, [isOpen, formData.discipline]);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  const handleDisciplineChange = (discipline) => {
+    setFormData(prev => ({
+      ...prev,
+      discipline: discipline,
+      staff: '' // Reset staff when discipline changes
     }));
   };
 
@@ -53,30 +79,49 @@ function VisitEditModal({ visit, isOpen, onClose, onSave }) {
   };
 
   const handleSave = async () => {
-    if (!visit) return;
-
     setLoading(true);
     setError('');
 
     try {
-      const updates = {
-        staff: formData.staff || null,
-        visitType: formData.visitType,
-        tags: formData.tags,
-        notes: formData.notes
-      };
+      if (isNewVisit) {
+        // Create new visit
+        const newVisitData = {
+          patientId: patient.id,
+          patientName: patient.name,
+          date: formData.date,
+          discipline: formData.discipline,
+          staff: formData.staff || null,
+          visitType: formData.visitType,
+          tags: formData.tags,
+          notes: formData.notes,
+          status: 'confirmed' // New visits are confirmed by default
+        };
+        
+        await dataManager.createVisit(newVisitData);
+      } else {
+        // Update existing visit
+        const updates = {
+          date: formData.date,
+          staff: formData.staff || null,
+          discipline: formData.discipline,
+          visitType: formData.visitType,
+          tags: formData.tags,
+          notes: formData.notes
+        };
 
-      await dataManager.updateVisit(visit.id, updates);
+        await dataManager.updateVisit(visit.id, updates);
+      }
+      
       onSave && onSave();
       onClose();
     } catch (err) {
-      setError('Failed to update visit: ' + err.message);
+      setError('Failed to save visit: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen || !visit) return null;
+  if (!isOpen) return null;
 
   const commonTags = ['recert', 'prn', 'HUV1', 'HUV2', 'over-limit'];
   const visitTypes = [
@@ -84,16 +129,49 @@ function VisitEditModal({ visit, isOpen, onClose, onSave }) {
     { value: 'recert', label: 'Recertification' },
     { value: 'prn', label: 'PRN' }
   ];
+  const disciplines = [
+    { value: 'RN', label: 'Registered Nurse (RN)' },
+    { value: 'LVN', label: 'Licensed Vocational Nurse (LVN)' },
+    { value: 'NP', label: 'Nurse Practitioner (NP)' }
+  ];
+
+  const modalTitle = isNewVisit ? 'Add New Visit' : 'Edit Visit';
+  const patientName = isNewVisit ? patient?.name : visit?.patientName;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <h3>Edit Visit</h3>
+        <h3>{modalTitle}</h3>
         
         <div className="visit-info">
-          <p><strong>Patient:</strong> {visit.patientName}</p>
-          <p><strong>Date:</strong> {new Date(visit.date).toLocaleDateString()}</p>
-          <p><strong>Discipline:</strong> {visit.discipline}</p>
+          <p><strong>Patient:</strong> {patientName}</p>
+          {!isNewVisit && (
+            <p><strong>Current Date:</strong> {new Date(visit.date).toLocaleDateString()}</p>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>Visit Date:</label>
+          <input
+            type="date"
+            value={formData.date}
+            onChange={(e) => handleInputChange('date', e.target.value)}
+            min={new Date().toISOString().split('T')[0]}
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Discipline:</label>
+          <select
+            value={formData.discipline}
+            onChange={(e) => handleDisciplineChange(e.target.value)}
+          >
+            {disciplines.map(discipline => (
+              <option key={discipline.value} value={discipline.value}>
+                {discipline.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="form-group">
@@ -109,6 +187,19 @@ function VisitEditModal({ visit, isOpen, onClose, onSave }) {
               </option>
             ))}
           </select>
+          {formData.staff && (
+            <div style={{ 
+              marginTop: '4px', 
+              padding: '4px 8px', 
+              borderRadius: '4px',
+              backgroundColor: visitUtils.getStaffColor(formData.staff, data.staff),
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}>
+              Selected: {formData.staff}
+            </div>
+          )}
         </div>
 
         <div className="form-group">
@@ -168,7 +259,7 @@ function VisitEditModal({ visit, isOpen, onClose, onSave }) {
             onClick={handleSave}
             disabled={loading}
           >
-            {loading ? 'Saving...' : 'Save Changes'}
+            {loading ? 'Saving...' : (isNewVisit ? 'Add Visit' : 'Save Changes')}
           </button>
         </div>
       </div>

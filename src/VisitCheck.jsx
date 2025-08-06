@@ -207,9 +207,13 @@ function VisitCheck({ token, dataVersion, onDataChange }) {
     }
   }
 
-  // Get visits for current week
+  // Get visits for current week - only include visits from current week forward
   const weekDates = getWeekDates(selectedWeek);
-  const weekVisits = data.visits.filter(v => weekDates.includes(v.date));
+  const currentWeekStart = new Date(selectedWeek);
+  const weekVisits = data.visits.filter(v => {
+    const visitDate = new Date(v.date);
+    return weekDates.includes(v.date) && visitDate >= currentWeekStart;
+  });
   
   // Filter visits based on HOPE filter
   let filteredWeekVisits = weekVisits;
@@ -407,7 +411,7 @@ function VisitCheck({ token, dataVersion, onDataChange }) {
           <div className="visits-grid">
             {unassignedVisits.map(visit => {
               const patient = data.patients.find(p => p.id === visit.patientId);
-              const isOverdue = visitUtils.isOverdue(visit);
+              const isOverdue = visitUtils.isOverdue(visit, data.visits);
               
               return (
                 <div
@@ -463,7 +467,7 @@ function VisitCheck({ token, dataVersion, onDataChange }) {
           <div className="visits-grid">
             {scheduledVisits.map(visit => {
               const patient = data.patients.find(p => p.id === visit.patientId);
-              const isOverdue = visitUtils.isOverdue(visit);
+              const isOverdue = visitUtils.isOverdue(visit, data.visits);
               const isHOPE = visit.tags && visit.tags.includes("HOPE");
               
               return (

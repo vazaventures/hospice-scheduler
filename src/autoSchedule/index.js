@@ -7,7 +7,7 @@
 export { generateRnVisits } from './rn.js';
 export { generateNpVisits } from './np.js';
 export { generateHopeVisits } from './hope.js';
-export { generateLvnVisits } from './lvn.js';
+export { generateLvnVisits, parseFrequency } from './lvn.js';
 
 // Import utility functions
 export { 

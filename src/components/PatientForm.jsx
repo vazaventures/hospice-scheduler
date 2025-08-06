@@ -100,7 +100,7 @@ function PatientForm({ patient = null, onSave, onCancel }) {
   };
 
   const getStaffOptions = (role) => {
-    const staff = dataManager.getData().staff.filter(s => s.role === role && s.status === 'active');
+    const staff = dataManager.getData().staff.filter(s => s.role === role && s.active);
     return staff.map(s => (
       <option key={s.id} value={s.name}>{s.name}</option>
     ));

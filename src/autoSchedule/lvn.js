@@ -42,6 +42,58 @@ export function isPreferredDay(patient, date) {
 }
 
 /**
+ * Check if LVN visit is due based on patient's frequency requirements
+ * @param {Object} patient - Patient object
+ * @param {Array} existingVisits - Array of existing visits to check against
+ * @returns {Object} - Object with isDue, reason, and daysSinceLast properties
+ */
+export function isLVNVisitDue(patient, existingVisits = []) {
+  // Parse patient's frequency requirement
+  const frequencyNum = parseFrequency(patient.frequency);
+  
+  // Get the most recent confirmed LVN visit
+  const confirmedLVNVisits = existingVisits.filter(v => 
+    v.patientId === patient.id && 
+    v.discipline === 'LVN' && 
+    v.status === 'confirmed' &&
+    v.completed
+  ).sort((a, b) => new Date(b.date) - new Date(a.date));
+  
+  const lastConfirmedLVNVisit = confirmedLVNVisits[0];
+  
+  if (!lastConfirmedLVNVisit) {
+    // No confirmed LVN visit exists - due immediately
+    return {
+      isDue: true,
+      reason: `No confirmed LVN visit in past week (${frequencyNum}x/week frequency)`,
+      daysSinceLast: null
+    };
+  }
+  
+  const daysSinceLastLVN = Math.floor((new Date() - new Date(lastConfirmedLVNVisit.date)) / (1000 * 60 * 60 * 24));
+  
+  // Calculate expected interval based on frequency
+  // For 2x/week: every 3-4 days (average 3.5 days)
+  // For 3x/week: every 2-3 days (average 2.33 days)
+  const expectedInterval = frequencyNum === 2 ? 3.5 : 2.33;
+  
+  // LVN visit due if expected interval has passed
+  if (daysSinceLastLVN >= expectedInterval) {
+    return {
+      isDue: true,
+      reason: `LVN visit overdue by ${Math.floor(daysSinceLastLVN - expectedInterval)} days (${frequencyNum}x/week frequency)`,
+      daysSinceLast: daysSinceLastLVN
+    };
+  }
+  
+  return {
+    isDue: false,
+    reason: `LVN visit due in ${Math.ceil(expectedInterval - daysSinceLastLVN)} days (${frequencyNum}x/week frequency)`,
+    daysSinceLast: daysSinceLastLVN
+  };
+}
+
+/**
  * Find the best available day for LVN visit considering RN visits and spacing
  * @param {Object} patient - Patient object
  * @param {Array} weekDates - Array of week dates
@@ -116,10 +168,7 @@ export function findBestLVNDay(patient, weekDates, existingVisits, visitIndex, t
  */
 export function generateLVNVisits(patient, weekDates, visitsScheduled, frequencyNum, findAvailableDay, existingVisits = []) {
   const visits = [];
-  const remainingSlots = frequencyNum - visitsScheduled;
   
-  if (remainingSlots <= 0) return visits;
-
   // Get existing LVN visits for this patient this week
   const existingLVNThisWeek = existingVisits.filter(v => 
     v.patientId === patient.id && 
@@ -128,27 +177,42 @@ export function generateLVNVisits(patient, weekDates, visitsScheduled, frequency
   );
   
   const existingLVNCount = existingLVNThisWeek.length;
-  const additionalNeeded = Math.max(0, remainingSlots - existingLVNCount);
+  const totalNeeded = frequencyNum;
+  const additionalNeeded = Math.max(0, totalNeeded - existingLVNCount);
+  
+  console.log(`🔧 generateLVNVisits for ${patient.name}:`, {
+    frequency: patient.frequency,
+    frequencyNum,
+    existingLVNCount,
+    totalNeeded,
+    additionalNeeded,
+    weekDates
+  });
   
   for (let i = 0; i < additionalNeeded; i++) {
     const visitIndex = existingLVNCount + i;
     const availableDay = findBestLVNDay(patient, weekDates, existingVisits, visitIndex, frequencyNum);
     
     if (availableDay) {
-      visits.push({
+      const visit = {
         id: `auto-lvn-${patient.id}-${Date.now()}-${i}`,
         patientId: patient.id,
         patientName: patient.name,
         date: availableDay,
         staff: patient.assignedLVN,
         discipline: "LVN",
-        type: "routine",
+        visitType: "routine",
         completed: false,
         status: "suggested",
         notes: `Auto-suggested LVN visit (${frequencyNum}x/week)`,
         tags: [],
         priority: "medium"
-      });
+      };
+      
+      visits.push(visit);
+      console.log(`✅ Created LVN visit for ${patient.name} on ${availableDay}`);
+    } else {
+      console.log(`❌ No available day found for LVN visit ${i + 1} for ${patient.name}`);
     }
   }
 

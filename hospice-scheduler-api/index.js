@@ -11,15 +11,15 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Configure your Snowflake connection
+// Configure your Snowflake connection using environment variables
 const connection = snowflake.createConnection({
-  account: 'ERHPAWA-WO05287', // e.g. xy12345.us-east-1
-  username: 'COMFORTCARETEST',
-  password: '@RonakRonak1992',
-  warehouse: 'COMPUTE_WH',
-  database: 'HOSPICE_SCHEDULER',
-  schema: 'PUBLIC',
-  role: 'ACCOUNTADMIN'
+  account: process.env.SNOWFLAKE_ACCOUNT || 'ERHPAWA-WO05287',
+  username: process.env.SNOWFLAKE_USER || 'COMFORTCARETEST',
+  password: process.env.SNOWFLAKE_PASSWORD || '@RonakRonak1992',
+  warehouse: process.env.SNOWFLAKE_WAREHOUSE || 'COMPUTE_WH',
+  database: process.env.SNOWFLAKE_DATABASE || 'HOSPICE_SCHEDULER',
+  schema: process.env.SNOWFLAKE_SCHEMA || 'PUBLIC',
+  role: process.env.SNOWFLAKE_ROLE || 'ACCOUNTADMIN'
 });
 
 // Connect to Snowflake
@@ -70,8 +70,8 @@ app.get('/api/patients', authenticateToken, (req, res) => {
   });
 });
 
-// Secret for JWT (in production, use an environment variable!)
-const JWT_SECRET = 'your_super_secret_key';
+// Secret for JWT - use environment variable in production
+const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key_change_in_production';
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];

@@ -8,7 +8,7 @@ import DataEditor from "./DataEditor.jsx";
 import VisitCheck from "./VisitCheck.jsx";
 import { clearAllData, ensureCleanStartup } from "./dataLoader";
 
-const API_URL = "http://localhost:4000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 
 function App() {
   const [token, setToken] = useState("");
@@ -20,16 +20,44 @@ function App() {
   const [activeTab, setActiveTab] = useState("patients");
   const [dataVersion, setDataVersion] = useState(0);
 
-  // Initialize app with clean data
+  // Initialize app with clean data and check for stored token
   useEffect(() => {
     ensureCleanStartup();
+    
+    // Check for stored JWT token
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken && storedToken !== 'DEMO_TOKEN') {
+      // Verify token is still valid by making a test API call
+      verifyToken(storedToken);
+    }
   }, []);
+
+  // Verify stored token is still valid
+  const verifyToken = async (storedToken) => {
+    try {
+      const response = await axios.get(`${API_URL}/patients`, {
+        headers: { Authorization: `Bearer ${storedToken}` }
+      });
+      if (response.status === 200) {
+        setToken(storedToken);
+        setMessage("Welcome back! Logged in with stored credentials.");
+      }
+    } catch (err) {
+      // Token is invalid, remove it
+      localStorage.removeItem('authToken');
+      console.log('Stored token is invalid, please log in again');
+    }
+  };
 
   const handleLogin = async () => {
     try {
       setMessage("");
       const res = await axios.post(`${API_URL}/login`, { email, password });
-      setToken(res.data.token);
+      const authToken = res.data.token;
+      
+      // Store token in localStorage for persistence
+      localStorage.setItem('authToken', authToken);
+      setToken(authToken);
       setMessage("Login successful!");
     } catch (err) {
       setMessage("Login failed: " + (err.response?.data?.error || err.message));
@@ -48,16 +76,24 @@ function App() {
   };
 
   const handleDemoMode = () => {
-    setToken("DEMO_TOKEN");
-    setDemoMode(true);
-    setMessage("");
-    // Demo mode activated - no sample data loaded
+    // Check if demo mode is enabled via environment variable
+    const isDemoEnabled = import.meta.env.VITE_IS_DEMO === 'true';
+    
+    if (isDemoEnabled) {
+      setToken("DEMO_TOKEN");
+      setDemoMode(true);
+      setMessage("Demo mode activated");
+    } else {
+      setMessage("Demo mode is disabled. Please login with valid credentials.");
+    }
   };
 
   const handleLogout = () => {
+    // Clear stored token
+    localStorage.removeItem('authToken');
     setToken("");
     setDemoMode(false);
-    setMessage("");
+    setMessage("Logged out successfully");
   };
 
   const renderTabContent = () => {
@@ -79,6 +115,9 @@ function App() {
     }
   };
 
+  // Authentication guard - redirect to login if no token and not in demo mode
+  const isAuthenticated = token && (token === 'DEMO_TOKEN' || token.length > 10);
+  
   return (
     <div className="app-container">
       {demoMode && (
@@ -87,7 +126,7 @@ function App() {
         </div>
       )}
       
-      {!token ? (
+      {!isAuthenticated ? (
         <div className="login-container">
           <div className="login-card">
             <h1>🏥 Hospice Scheduler</h1>

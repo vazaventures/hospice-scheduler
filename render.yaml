@@ -10,6 +10,22 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: SNOWFLAKE_ACCOUNT
+        value: ERHPAWA-WO05287
+      - key: SNOWFLAKE_USER
+        value: COMFORTCARETEST
+      - key: SNOWFLAKE_PASSWORD
+        value: "@RonakRonak1992"
+      - key: SNOWFLAKE_WAREHOUSE
+        value: COMPUTE_WH
+      - key: SNOWFLAKE_DATABASE
+        value: HOSPICE_SCHEDULER
+      - key: SNOWFLAKE_SCHEMA
+        value: PUBLIC
+      - key: SNOWFLAKE_ROLE
+        value: ACCOUNTADMIN
+      - key: JWT_SECRET
+        value: "hospice_scheduler_jwt_secret_2024_production"
 
   # Frontend
   - type: web

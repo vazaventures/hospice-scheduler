@@ -33,8 +33,20 @@ export function isRNVisitDue(patient, existingVisits = []) {
   
   const daysSinceLastRN = Math.floor((new Date() - new Date(lastConfirmedRNVisit.date)) / (1000 * 60 * 60 * 24));
   
-  // RN visit due if 14+ days have passed
-  if (daysSinceLastRN >= 14) {
+  // Check if patient has scheduled RN visits
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const hasScheduledVisit = existingVisits.some(v => {
+    const visitDate = new Date(v.date.split('T')[0]);
+    visitDate.setHours(0, 0, 0, 0);
+    return v.patientId === patient.id && 
+           v.discipline === 'RN' &&
+           visitDate >= today &&
+           (v.status === 'confirmed' || v.status === 'suggested');
+  });
+  
+  // RN visit due if 14+ days have passed AND no scheduled visit
+  if (daysSinceLastRN >= 14 && !hasScheduledVisit) {
     return {
       isDue: true,
       reason: `RN visit overdue by ${daysSinceLastRN - 14} days`,

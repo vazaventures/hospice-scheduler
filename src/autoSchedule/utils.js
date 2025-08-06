@@ -129,7 +129,7 @@ export function getDailyVisitCount(staffName, date, existingVisits) {
   return existingVisits.filter(v => 
     v.staff === staffName && 
     v.date === date && 
-    v.status === 'confirmed'
+    (v.status === 'confirmed' || v.status === 'suggested')
   ).length;
 }
 
@@ -142,11 +142,8 @@ export function getDailyVisitCount(staffName, date, existingVisits) {
  * @returns {string|null} - Best date to schedule, or null if no availability
  */
 export function findBestDayForEvenDistribution(staffName, weekDates, existingVisits, discipline) {
-  // Filter to weekdays only (Monday-Friday)
-  const weekdays = weekDates.filter(date => {
-    const dayOfWeek = new Date(date).getDay();
-    return dayOfWeek >= 1 && dayOfWeek <= 5; // Monday = 1, Friday = 5
-  });
+  // Filter to weekdays only (Monday-Friday) - weekDates[0] is Monday, weekDates[4] is Friday
+  const weekdays = weekDates.slice(0, 5); // Take first 5 days (Monday-Friday)
 
   // Get current visit counts for each weekday
   const dayCounts = weekdays.map(date => ({

@@ -1,6 +1,8 @@
 // Centralized Data Manager for Hospice Scheduler
 // Handles all data operations with proper persistence and synchronization
 
+import { getSampleData } from './sampleData.js';
+
 class DataManager {
   constructor() {
     this.subscribers = new Set();
@@ -16,7 +18,10 @@ class DataManager {
 
   // Initialize data manager
   async initialize(token) {
-    this.isDemo = token === 'DEMO_TOKEN';
+    // Check environment variable first, then fallback to token check
+    const envDemo = import.meta?.env?.VITE_IS_DEMO === 'true';
+    this.isDemo = envDemo || token === 'DEMO_TOKEN';
+    this.token = token;
     
     if (this.isDemo) {
       this.loadDemoData();
@@ -33,6 +38,12 @@ class DataManager {
     this.data.visits = JSON.parse(localStorage.getItem('hospice-visits') || '[]');
     this.data.staff = JSON.parse(localStorage.getItem('hospice-staff') || '[]');
     this.data.alerts = JSON.parse(localStorage.getItem('hospice-alerts') || '[]');
+    
+    // If no data exists, create fresh sample data
+    if (this.data.patients.length === 0 || this.data.visits.length === 0 || this.data.staff.length === 0) {
+      console.log('📝 No demo data found - creating fresh sample data');
+      this.createFreshSampleData();
+    }
   }
 
   // Load data from API
@@ -71,34 +82,24 @@ class DataManager {
     this.notifySubscribers();
   }
 
-  // Save to API
+  // Save to API (Note: This bulk save method is not used in normal operations)
   async saveToAPI() {
-    try {
-      await Promise.all([
-        fetch('/api/patients', { 
-          method: 'PUT', 
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.data.patients)
-        }),
-        fetch('/api/visits', { 
-          method: 'PUT', 
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.data.visits)
-        }),
-        fetch('/api/staff', { 
-          method: 'PUT', 
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.data.staff)
-        }),
-        fetch('/api/alerts', { 
-          method: 'PUT', 
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.data.alerts)
-        })
-      ]);
-    } catch (error) {
-      console.error('Failed to save data to API:', error);
-    }
+    console.warn('saveToAPI: Bulk save method called - this should not be used in normal operations');
+    // This method is kept for compatibility but should not be used
+    // Individual CRUD operations should use the specific methods below
+  }
+
+  // Get API base URL
+  getApiUrl() {
+    return import.meta?.env?.VITE_API_URL || 'http://localhost:4000/api';
+  }
+
+  // Get auth headers
+  getAuthHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.token}`
+    };
   }
 
   // Subscribe to data changes
@@ -149,11 +150,51 @@ class DataManager {
 
   // VISIT OPERATIONS
   async updateVisit(visitId, updates) {
-    const index = this.data.visits.findIndex(v => v.id === visitId);
-    if (index !== -1) {
-      this.data.visits[index] = { ...this.data.visits[index], ...updates };
-      await this.saveData();
-      this.notifySubscribers();
+    if (this.isDemo) {
+      // Demo mode - use localStorage
+      const index = this.data.visits.findIndex(v => v.id === visitId);
+      if (index !== -1) {
+        this.data.visits[index] = { ...this.data.visits[index], ...updates };
+        await this.saveData();
+        this.notifySubscribers();
+      }
+    } else {
+      // Live mode - use API
+      try {
+        const visit = this.data.visits.find(v => v.id === visitId);
+        if (!visit) throw new Error('Visit not found');
+
+        const updatedVisit = { ...visit, ...updates };
+        const response = await fetch(`${this.getApiUrl()}/visits/${visitId}`, {
+          method: 'PUT',
+          headers: this.getAuthHeaders(),
+          body: JSON.stringify({
+            patientId: updatedVisit.patientId,
+            date: updatedVisit.date,
+            staff: updatedVisit.staff,
+            discipline: updatedVisit.discipline,
+            type: updatedVisit.visitType || updatedVisit.type,
+            tags: updatedVisit.tags || [],
+            completed: updatedVisit.completed || false,
+            notes: updatedVisit.notes || ''
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to update visit: ${response.statusText}`);
+        }
+
+        // Update local data
+        const index = this.data.visits.findIndex(v => v.id === visitId);
+        if (index !== -1) {
+          this.data.visits[index] = { ...this.data.visits[index], ...updates };
+        }
+        
+        this.notifySubscribers();
+      } catch (error) {
+        console.error('Error updating visit:', error);
+        throw error;
+      }
     }
   }
 
@@ -173,15 +214,72 @@ class DataManager {
     if (visitData.tags && visitData.tags.includes('prn')) {
       newVisit.status = 'confirmed';
     }
+
+    if (this.isDemo) {
+      // Demo mode - use localStorage
+      this.data.visits.push(newVisit);
+      await this.saveData();
+      this.notifySubscribers();
+    } else {
+      // Live mode - use API
+      try {
+        const response = await fetch(`${this.getApiUrl()}/visits`, {
+          method: 'POST',
+          headers: this.getAuthHeaders(),
+          body: JSON.stringify({
+            id: newVisit.id,
+            patientId: newVisit.patientId,
+            date: newVisit.date,
+            staff: newVisit.staff,
+            discipline: newVisit.discipline,
+            type: newVisit.visitType,
+            tags: newVisit.tags,
+            completed: newVisit.completed,
+            notes: newVisit.notes
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to create visit: ${response.statusText}`);
+        }
+
+        // Add to local data
+        this.data.visits.push(newVisit);
+        this.notifySubscribers();
+      } catch (error) {
+        console.error('Error creating visit:', error);
+        throw error;
+      }
+    }
     
-    this.data.visits.push(newVisit);
-    await this.saveData();
     return newVisit;
   }
 
   async deleteVisit(visitId) {
-    this.data.visits = this.data.visits.filter(v => v.id !== visitId);
-    await this.saveData();
+    if (this.isDemo) {
+      // Demo mode - use localStorage
+      this.data.visits = this.data.visits.filter(v => v.id !== visitId);
+      await this.saveData();
+    } else {
+      // Live mode - use API
+      try {
+        const response = await fetch(`${this.getApiUrl()}/visits/${visitId}`, {
+          method: 'DELETE',
+          headers: this.getAuthHeaders()
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to delete visit: ${response.statusText}`);
+        }
+
+        // Remove from local data
+        this.data.visits = this.data.visits.filter(v => v.id !== visitId);
+        this.notifySubscribers();
+      } catch (error) {
+        console.error('Error deleting visit:', error);
+        throw error;
+      }
+    }
   }
 
   // STAFF OPERATIONS
@@ -226,10 +324,29 @@ class DataManager {
     console.log('Staff assignment complete - no auto-regeneration');
   }
 
-  // DISABLED: Auto-regeneration is causing issues
+  // Regenerate visits for a patient
   async regenerateVisitsForPatient(patientId, weeksAhead = 2) {
-    console.log('Auto-regeneration DISABLED - keeping visits simple');
-    return;
+    const patient = this.data.patients.find(p => p.id === patientId);
+    if (!patient) return;
+
+    // Remove existing suggested visits for this patient
+    this.data.visits = this.data.visits.filter(v => 
+      !(v.patientId === patientId && v.status === 'suggested')
+    );
+
+    // Generate new visits for the next few weeks
+    const weekDates = this.getWeekDates(new Date());
+    const scheduler = new (await import('./autoScheduleVisits.js')).RobustAutoScheduler(
+      [patient], 
+      this.data.staff, 
+      this.data.visits
+    );
+    
+    const newVisits = scheduler.generateVisitsForWeek(weekDates[0]);
+    
+    // Add new visits to the data
+    this.data.visits.push(...newVisits);
+    await this.saveData();
   }
 
   async completeVisit(visitId) {
@@ -306,7 +423,16 @@ class DataManager {
       if (lastRNVisit) {
         const daysSinceLastRN = Math.floor((this.simulatedDate - new Date(lastRNVisit)) / (1000 * 60 * 60 * 24));
         
-        if (daysSinceLastRN >= 14) {
+        // Check if patient has scheduled RN visits
+        const hasScheduledVisit = this.data.visits.some(v => {
+          const visitDate = new Date(v.date.split('T')[0]);
+          return v.patientId === patient.id && 
+                 v.discipline === 'RN' &&
+                 visitDate >= this.simulatedDate &&
+                 (v.status === 'confirmed' || v.status === 'suggested');
+        });
+        
+        if (daysSinceLastRN >= 14 && !hasScheduledVisit) {
           alerts.push({
             id: `alert-${patient.id}-overdue`,
             type: 'overdue',
@@ -317,7 +443,7 @@ class DataManager {
             date: currentDate,
             daysOverdue: daysSinceLastRN - 14
           });
-        } else if (daysSinceLastRN >= 12) {
+        } else if (daysSinceLastRN >= 12 && !hasScheduledVisit) {
           alerts.push({
             id: `alert-${patient.id}-due-soon`,
             type: 'due-soon',
@@ -835,6 +961,28 @@ class DataManager {
     console.log('Test compliance data created successfully with real patient data');
   }
 
+  // Create fresh sample data (internal method, doesn't save)
+  createFreshSampleData() {
+    // Clear existing data
+    this.data.patients = [];
+    this.data.visits = [];
+    this.data.staff = [];
+    this.data.alerts = [];
+
+    // Get sample data from the centralized source
+    const sampleData = getSampleData();
+    
+    // Set the data
+    this.data.staff = sampleData.staff;
+    this.data.patients = sampleData.patients;
+    this.data.visits = sampleData.visits;
+
+    console.log('Fresh sample data created with 15 patients and 6 staff members');
+    console.log('All patients have proper assignments and benefit periods');
+    console.log('Completed visits added to establish visit history');
+    console.log('Auto-scheduler will now generate visits for all patients');
+  }
+
   // Reset and create fresh sample data with new data points
   async resetAndCreateFreshSampleData() {
     // Clear existing data
@@ -843,427 +991,24 @@ class DataManager {
     this.data.staff = [];
     this.data.alerts = [];
 
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
+    // Get sample data from the centralized source
+    const sampleData = getSampleData();
+    
+    // Set the data
+    this.data.staff = sampleData.staff;
+    this.data.patients = sampleData.patients;
+    this.data.visits = sampleData.visits;
 
-    // Create fresh test staff with new names
-    const testStaff = [
-      {
-        id: 'staff-1',
-        name: 'Sarah Johnson RN',
-        role: 'RN',
-        color: '#254FBB',
-        active: true
-      },
-      {
-        id: 'staff-2',
-        name: 'Michael Chen LVN',
-        role: 'LVN',
-        color: '#38AAE1',
-        active: true
-      },
-      {
-        id: 'staff-3',
-        name: 'Emily Rodriguez RN',
-        role: 'RN',
-        color: '#83CDC1',
-        active: true
-      },
-      {
-        id: 'staff-4',
-        name: 'David Thompson LVN',
-        role: 'LVN',
-        color: '#9FDFE1',
-        active: true
-      },
-      {
-        id: 'staff-5',
-        name: 'Lisa Park RN',
-        role: 'RN',
-        color: '#e74c3c',
-        active: true
-      },
-      {
-        id: 'staff-6',
-        name: 'Dr. James Wilson NP',
-        role: 'NP',
-        color: '#f39c12',
-        active: true
-      }
-    ];
-
-    // Create fresh test patients with diverse scenarios
-    const testPatients = [
-      {
-        id: 'patient-1',
-        name: 'Anderson, Margaret',
-        city: 'Anaheim',
-        socDate: '2025-01-15',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2025-01-15',
-        frequency: '3x/week',
-        assignedRN: 'Sarah Johnson RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-20', // 8 days ago - due for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-2',
-        name: 'Martinez, Carlos',
-        city: 'Brea',
-        socDate: '2025-01-10',
-        benefitPeriodNumber: 'BP2',
-        benefitPeriodStart: '2025-01-10',
-        frequency: '2x/week',
-        assignedRN: 'Emily Rodriguez RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-18', // 10 days ago - due for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-3',
-        name: 'Kim, Jennifer',
-        city: 'Costa Mesa',
-        socDate: '2025-01-05',
-        benefitPeriodNumber: 'BP3',
-        benefitPeriodStart: '2025-01-05',
-        frequency: '3x/week',
-        assignedRN: 'Lisa Park RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-15', // 13 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-4',
-        name: 'Williams, Robert',
-        city: 'Dana Point',
-        socDate: '2024-12-20',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2024-12-20',
-        frequency: '2x/week',
-        assignedRN: 'Sarah Johnson RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-12', // 16 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-5',
-        name: 'Garcia, Maria',
-        city: 'Fountain Valley',
-        socDate: '2024-12-15',
-        benefitPeriodNumber: 'BP2',
-        benefitPeriodStart: '2024-12-15',
-        frequency: '3x/week',
-        assignedRN: 'Emily Rodriguez RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-10', // 18 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-6',
-        name: 'Brown, Patricia',
-        city: 'Garden Grove',
-        socDate: '2024-12-10',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2024-12-10',
-        frequency: '2x/week',
-        assignedRN: 'Lisa Park RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-08', // 20 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-7',
-        name: 'Davis, Thomas',
-        city: 'Huntington Beach',
-        socDate: '2024-12-05',
-        benefitPeriodNumber: 'BP3',
-        benefitPeriodStart: '2024-12-05',
-        frequency: '3x/week',
-        assignedRN: 'Sarah Johnson RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-05', // 23 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-8',
-        name: 'Miller, Linda',
-        city: 'Irvine',
-        socDate: '2024-11-25',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2024-11-25',
-        frequency: '2x/week',
-        assignedRN: 'Emily Rodriguez RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-15', // 13 days ago - due for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-9',
-        name: 'Wilson, John',
-        city: 'Laguna Beach',
-        socDate: '2024-11-20',
-        benefitPeriodNumber: 'BP2',
-        benefitPeriodStart: '2024-11-20',
-        frequency: '3x/week',
-        assignedRN: 'Lisa Park RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-12', // 16 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-10',
-        name: 'Taylor, Susan',
-        city: 'Laguna Niguel',
-        socDate: '2024-11-15',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2024-11-15',
-        frequency: '2x/week',
-        assignedRN: 'Sarah Johnson RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-18', // 10 days ago - due for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-11',
-        name: 'Moore, Daniel',
-        city: 'Lake Forest',
-        socDate: '2024-11-10',
-        benefitPeriodNumber: 'BP3',
-        benefitPeriodStart: '2024-11-10',
-        frequency: '3x/week',
-        assignedRN: 'Emily Rodriguez RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-10', // 18 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-12',
-        name: 'Jackson, Barbara',
-        city: 'Mission Viejo',
-        socDate: '2024-11-05',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2024-11-05',
-        frequency: '2x/week',
-        assignedRN: 'Lisa Park RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-15', // 13 days ago - due for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-13',
-        name: 'Martin, Christopher',
-        city: 'Newport Beach',
-        socDate: '2024-10-25',
-        benefitPeriodNumber: 'BP2',
-        benefitPeriodStart: '2024-10-25',
-        frequency: '3x/week',
-        assignedRN: 'Sarah Johnson RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-12', // 16 days ago - overdue for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-14',
-        name: 'Lee, Jessica',
-        city: 'Orange',
-        socDate: '2024-10-20',
-        benefitPeriodNumber: 'BP1',
-        benefitPeriodStart: '2024-10-20',
-        frequency: '2x/week',
-        assignedRN: 'Emily Rodriguez RN',
-        assignedLVN: 'David Thompson LVN',
-        assignedNP: null,
-        lastRNVisitDate: '2025-01-18', // 10 days ago - due for RN visit
-        visitStatus: 'active'
-      },
-      {
-        id: 'patient-15',
-        name: 'White, Kevin',
-        city: 'Placentia',
-        socDate: '2024-10-15',
-        benefitPeriodNumber: 'BP3',
-        benefitPeriodStart: '2024-10-15',
-        frequency: '3x/week',
-        assignedRN: 'Lisa Park RN',
-        assignedLVN: 'Michael Chen LVN',
-        assignedNP: 'Dr. James Wilson NP',
-        lastRNVisitDate: '2025-01-10', // 18 days ago - overdue for RN visit
-        visitStatus: 'active'
-      }
-    ];
-
-    // Create fresh test visits with various scenarios
-    const testVisits = [
-      // Today's urgent visits (overdue)
-      {
-        id: 'visit-1',
-        patientId: 'patient-3',
-        patientName: 'Kim, Jennifer',
-        date: today.toISOString().split('T')[0],
-        staff: 'Lisa Park RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'RN visit overdue (13 days) - BP3 patient',
-        tags: ['routine'],
-        priority: 'urgent'
-      },
-      {
-        id: 'visit-2',
-        patientId: 'patient-4',
-        patientName: 'Williams, Robert',
-        date: today.toISOString().split('T')[0],
-        staff: 'Sarah Johnson RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'RN visit overdue (16 days)',
-        tags: ['routine'],
-        priority: 'urgent'
-      },
-      {
-        id: 'visit-3',
-        patientId: 'patient-5',
-        patientName: 'Garcia, Maria',
-        date: today.toISOString().split('T')[0],
-        staff: 'Emily Rodriguez RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'RN visit overdue (18 days) - BP2 patient',
-        tags: ['routine'],
-        priority: 'urgent'
-      },
-      // Tomorrow's high priority visits (due)
-      {
-        id: 'visit-4',
-        patientId: 'patient-1',
-        patientName: 'Anderson, Margaret',
-        date: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        staff: 'Sarah Johnson RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'RN visit due tomorrow - 3x/week frequency',
-        tags: ['routine'],
-        priority: 'high'
-      },
-      {
-        id: 'visit-5',
-        patientId: 'patient-2',
-        patientName: 'Martinez, Carlos',
-        date: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        staff: 'Emily Rodriguez RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'RN visit due tomorrow - BP2 patient',
-        tags: ['routine'],
-        priority: 'high'
-      },
-      // HOPE visits (HUV1/HUV2 scenarios)
-      {
-        id: 'visit-6',
-        patientId: 'patient-1',
-        patientName: 'Anderson, Margaret',
-        date: today.toISOString().split('T')[0],
-        staff: 'Sarah Johnson RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'HOPE HUV1 visit (days 6-15)',
-        tags: ['HOPE', 'HUV1'],
-        priority: 'high'
-      },
-      {
-        id: 'visit-7',
-        patientId: 'patient-2',
-        patientName: 'Martinez, Carlos',
-        date: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        staff: 'Emily Rodriguez RN',
-        discipline: 'RN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'HOPE HUV2 visit (days 16-30)',
-        tags: ['HOPE', 'HUV2'],
-        priority: 'high'
-      },
-      // LVN visits
-      {
-        id: 'visit-8',
-        patientId: 'patient-1',
-        patientName: 'Anderson, Margaret',
-        date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        staff: 'Michael Chen LVN',
-        discipline: 'LVN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'LVN visit - 3x/week frequency',
-        tags: ['routine'],
-        priority: 'medium'
-      },
-      {
-        id: 'visit-9',
-        patientId: 'patient-2',
-        patientName: 'Martinez, Carlos',
-        date: new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        staff: 'David Thompson LVN',
-        discipline: 'LVN',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'LVN visit - 2x/week frequency',
-        tags: ['routine'],
-        priority: 'medium'
-      },
-      // NP visits for BP3+ patients
-      {
-        id: 'visit-10',
-        patientId: 'patient-3',
-        patientName: 'Kim, Jennifer',
-        date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        staff: 'Dr. James Wilson NP',
-        discipline: 'NP',
-        type: 'routine',
-        completed: false,
-        status: 'suggested',
-        notes: 'NP visit - BP3 patient',
-        tags: ['routine'],
-        priority: 'medium'
-      }
-    ];
-
-    // Save fresh test data
-    this.data.staff = testStaff;
-    this.data.patients = testPatients;
-    this.data.visits = testVisits;
-    this.data.alerts = [];
-
+    // Save the data
     await this.saveData();
-    console.log('Fresh sample data created successfully with new data points');
+
+    console.log('Fresh sample data created with 15 patients and 6 staff members');
+    console.log('All patients have proper assignments and benefit periods');
+    console.log('Completed visits added to establish visit history');
+    console.log('Auto-scheduler will now generate visits for all patients');
+    
+    // Notify subscribers immediately
+    this.notifySubscribers();
   }
 }
 

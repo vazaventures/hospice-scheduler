@@ -105,6 +105,37 @@ function StaffManager({ token, dataVersion, onDataChange }) {
     setShowForm(true);
   };
 
+  // Handle staff activation/deactivation with warning
+  const handleToggleActive = async (staff) => {
+    const assignedPatients = getAssignedPatients(staff.name, staff.role);
+    
+    // If trying to deactivate staff with assigned patients, show warning
+    if (staff.active && assignedPatients.length > 0) {
+      const patientNames = assignedPatients.map(p => p.name).join(', ');
+      const confirmMessage = `Warning: ${staff.name} is currently assigned to ${assignedPatients.length} patient(s): ${patientNames}.\n\nDeactivating this staff member may affect patient care scheduling. Are you sure you want to continue?`;
+      
+      if (!window.confirm(confirmMessage)) {
+        return; // User cancelled
+      }
+    }
+
+    setError("");
+    setSuccess("");
+    setLoading(true);
+
+    try {
+      await dataManager.updateStaff(staff.id, {
+        ...staff,
+        active: !staff.active
+      });
+      setSuccess(`${staff.name} has been ${staff.active ? 'deactivated' : 'activated'} successfully!`);
+    } catch (err) {
+      setError("Failed to update staff status: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDelete = async id => {
     if (!window.confirm("Are you sure you want to delete this staff member?")) return;
     
@@ -128,6 +159,26 @@ function StaffManager({ token, dataVersion, onDataChange }) {
     setShowForm(false);
     setError("");
     setSuccess("");
+  };
+
+  // Get assigned patient count for a staff member
+  const getAssignedPatientCount = (staffName, role) => {
+    return data.patients.filter(patient => {
+      if (role === 'RN') return patient.assignedRN === staffName;
+      if (role === 'LVN') return patient.assignedLVN === staffName;
+      if (role === 'NP') return patient.assignedNP === staffName;
+      return false;
+    }).length;
+  };
+
+  // Get patients assigned to a staff member
+  const getAssignedPatients = (staffName, role) => {
+    return data.patients.filter(patient => {
+      if (role === 'RN') return patient.assignedRN === staffName;
+      if (role === 'LVN') return patient.assignedLVN === staffName;
+      if (role === 'NP') return patient.assignedNP === staffName;
+      return false;
+    });
   };
 
   // Filter staff based on search and role filter
@@ -240,40 +291,57 @@ function StaffManager({ token, dataVersion, onDataChange }) {
             </tr>
           </thead>
           <tbody>
-            {filteredStaff.map(staff => (
-              <tr key={staff.id}>
-                <td>{staff.name}</td>
-                <td>
-                  <span className={`role-badge ${staff.role.toLowerCase()}`}>
-                    {staff.role}
-                  </span>
-                </td>
-                <td>
-                  <div className="color-preview" style={{ backgroundColor: staff.color }}></div>
-                </td>
-                <td>
-                  <span className={`status-badge ${staff.active ? 'active' : 'inactive'}`}>
-                    {staff.active ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td>
-                  <div className="action-buttons">
+            {filteredStaff.map(staff => {
+              const assignmentCount = getAssignedPatientCount(staff.name, staff.role);
+              return (
+                <tr key={staff.id}>
+                  <td>
+                    <div className="staff-name-container">
+                      <span className="staff-name">{staff.name}</span>
+                      {assignmentCount > 0 && (
+                        <span className="assignment-count-badge">
+                          {assignmentCount}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`role-badge ${staff.role.toLowerCase()}`}>
+                      {staff.role}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="color-preview" style={{ backgroundColor: staff.color }}></div>
+                  </td>
+                  <td>
                     <button
-                      onClick={() => handleEdit(staff)}
-                      className="edit-button"
+                      onClick={() => handleToggleActive(staff)}
+                      className={`status-toggle ${staff.active ? 'active' : 'inactive'}`}
+                      disabled={loading}
+                      title={`Click to ${staff.active ? 'deactivate' : 'activate'} ${staff.name}`}
                     >
-                      Edit
+                      {staff.active ? 'Active' : 'Inactive'}
                     </button>
-                    <button
-                      onClick={() => handleDelete(staff.id)}
-                      className="delete-button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td>
+                    <div className="action-buttons">
+                      <button
+                        onClick={() => handleEdit(staff)}
+                        className="edit-button"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(staff.id)}
+                        className="delete-button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -555,6 +623,60 @@ function StaffManager({ token, dataVersion, onDataChange }) {
         .status-badge.inactive {
           background: #f8d7da;
           color: #721c24;
+        }
+
+        .staff-name-container {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .staff-name {
+          font-weight: 500;
+        }
+
+        .assignment-count-badge {
+          background: #2196f3;
+          color: white;
+          font-size: 0.7rem;
+          font-weight: bold;
+          padding: 2px 6px;
+          border-radius: 10px;
+          min-width: 16px;
+          text-align: center;
+        }
+
+        .status-toggle {
+          padding: 6px 12px;
+          border: none;
+          border-radius: 12px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .status-toggle.active {
+          background: #d4edda;
+          color: #155724;
+        }
+
+        .status-toggle.active:hover {
+          background: #c3e6cb;
+        }
+
+        .status-toggle.inactive {
+          background: #f8d7da;
+          color: #721c24;
+        }
+
+        .status-toggle.inactive:hover {
+          background: #f1b0b7;
+        }
+
+        .status-toggle:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         .action-buttons {

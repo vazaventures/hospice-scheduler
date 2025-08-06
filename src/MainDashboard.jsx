@@ -62,7 +62,7 @@ function MainDashboard({ token, dataVersion, onDataChange }) {
     const rnVisits = data.visits.filter(v => v.patientId === patientId && v.discipline === "RN" && v.completed);
     if (rnVisits.length === 0) return "-";
     const last = rnVisits.reduce((a, b) => new Date(a.date) > new Date(b.date) ? a : b);
-    return last.date;
+    return new Date(last.date).toLocaleDateString();
   }
 
   // Helper: get status for a patient
@@ -70,6 +70,11 @@ function MainDashboard({ token, dataVersion, onDataChange }) {
     const id = patient.id;
     const visitsThisWeek = rnVisits.filter(v => v.patientId === id && thisWeekDates.includes(v.date) && v.completed);
     if (visitsThisWeek.length > 0) return "Completed";
+    
+    // Check if patient has any completed visits (indicating care has started)
+    const hasCompletedVisits = data.visits.some(v => v.patientId === id && v.completed);
+    if (hasCompletedVisits) return "In Progress";
+    
     return "Pending";
   }
 
